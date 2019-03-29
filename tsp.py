@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import random, numpy, math, copy, matplotlib.pyplot as plt
 cities = [random.sample(range(100), 2) for x in range(15)];
 tour = random.sample(range(15),15);
