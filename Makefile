@@ -1,7 +1,25 @@
+border-posts.zip: border-posts.geojson
+	-rm -f border-posts.zip
+	zip border-posts.zip border-posts.geojson
+
+border-posts.geojson: .imported_into_postgres Makefile
+	psql -At -c "with points as (select st_centroid(st_intersection(roads.way, border_segments.way)) as point from planet_osm_line as roads join border_segments on (st_intersects(roads.way, border_segments.way)) where roads.highway is not null), features as ( select 'Feature' as \"type\", ST_AsGeoJSON(points.point)::json as \"geometry\" from points) select row_to_json(fc) from ( select 'FeatureCollection' as \"type\", array_to_json(array_agg(features)) as \"features\" from features ) as fc;" > border-posts.geojson
+
+
+.imported_into_postgres: border-region.osm.pbf border-crossings.style
+	psql -c "DROP TABLE IF EXISTS border_segments;"
+	osm2pgsql -l -S border-crossings.style border-region.osm.pbf
+	psql -c "DELETE FROM planet_osm_polygon WHERE admin_level IS NULL OR admin_level != '2'"
+	psql -c "DELETE FROM planet_osm_line WHERE highway IS NULL"
+	psql -c "CREATE TABLE border_segments AS select ST_subdivide(st_exteriorring(way), 20) as way from planet_osm_polygon where admin_level = '2';"
+	psql -c "CREATE INDEX border_segments_geom on border_segments USING gist (way);"
+	touch .imported_into_postgres
+
 border-region.osm.pbf: ireland-sorted.osm.pbf border-region.geojson
-	osmium extract -p border-region.geojson --overwrite ireland-sorted.osm.pbf -o border-region.osm.pbf
+	osmium extract -s smart -S types=multipolygon,boundary -p border-region.geojson --overwrite ireland-sorted.osm.pbf -o border-region.osm.pbf
 
 ireland-and-northern-ireland-latest.osm.pbf:
+	-rm ireland-and-northern-ireland-latest.osm.pbf
 	wget https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf
 
 ireland-sorted.osm.pbf: ireland-and-northern-ireland-latest.osm.pbf
