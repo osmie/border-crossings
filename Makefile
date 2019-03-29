@@ -1,3 +1,5 @@
+SHELL=bash
+
 border-posts.zip: border-posts.geojson
 	-rm -f border-posts.zip
 	zip border-posts.zip border-posts.geojson
@@ -44,6 +46,10 @@ border-region.osm-gh/properties: config-example.yml border-region.osm.pbf graphh
 run-graphhopper: border-region.osm-gh/properties
 	java -Dgraphhopper.datareader.file=border-region.osm.pbf -jar *.jar server config-example.yml
 
-WARRENPORT=54.11110,-6.27838
-MUFF=55.06747,-7.26925
-BALLYCONNELL=54.116125,-7.583871
+border-points-matrix.csv: border-posts.csv border-region.osm-gh/properties
+	cat border-posts.csv | sed 1d | while read P1 ; do cat border-posts.csv | sed 1d | while read P2 ; do DIST=$$(curl -s "http://localhost:8989/route?point=$${P1/,/%2C}&point=$${P2/,/%2C}&type=json" | jq .paths[0].distance) ; echo "$${P1/,/_},$${P2/,/_},$${DIST}" ; done ; done | pv -l -s $$(( $$(cat border-posts.csv | wc -l) ** 2 )) > border-points.matrix.csv
+
+
+#WARRENPORT=54.11110,-6.27838
+#MUFF=55.06747,-7.26925
+#BALLYCONNELL=54.116125,-7.583871
