@@ -1,5 +1,8 @@
 SHELL=bash
 
+WARRENPORT="54.11110,-6.27838"
+MUFF="55.06747,-7.26925"
+
 border-posts.zip: border-posts.geojson
 	-rm -f border-posts.zip
 	zip border-posts.zip border-posts.geojson
@@ -8,7 +11,7 @@ border-posts.zip: border-posts.geojson
 #	psql -At -c "with points as (select st_centroid(st_intersection(roads.way, border_segments.way)) as point from planet_osm_line as roads join border_segments on (st_intersects(roads.way, border_segments.way)) where roads.highway is not null), features as ( select 'Feature' as \"type\", ST_AsGeoJSON(points.point)::json as \"geometry\" from points) select row_to_json(fc) from ( select 'FeatureCollection' as \"type\", array_to_json(array_agg(features)) as \"features\" from features ) as fc;" > border-posts.geojson
 #
 border-posts.csv: .imported_into_postgres Makefile
-	(echo "lat,lon" ; psql -At -F, -c "select st_y(point) as lat, st_x(point) as lon from (select st_centroid(st_intersection(roads.way, border_segments.way)) as point from planet_osm_line as roads join border_segments on (st_intersects(roads.way, border_segments.way)) where roads.highway is not null and roads.highway NOT IN ('path', 'track')) as points" ) > border-posts.csv
+	(echo "lat,lon" ; psql -At -F, -c "select st_y(point) as lat, st_x(point) as lon from (select st_centroid(st_intersection(roads.way, border_segments.way)) as point from planet_osm_line as roads join border_segments on (st_intersects(roads.way, border_segments.way)) where roads.highway is not null and roads.highway NOT IN ('path', 'track', 'footway', 'bridleway')) as points" ) > border-posts.csv
 
 border-posts.geojson: border-posts.csv
 	ogr2ogr -F GeoJSON border-posts.geojson border-posts.csv -oo X_POSSIBLE_NAMES=lon -oo Y_POSSIBLE_NAMES=lat
@@ -27,8 +30,7 @@ border-region.osm.pbf: ireland-sorted.osm.pbf border-region.geojson
 	osmium extract -s smart -S types=multipolygon,boundary -p border-region.geojson --overwrite ireland-sorted.osm.pbf -o border-region.osm.pbf
 
 ireland-and-northern-ireland-latest.osm.pbf:
-	-rm ireland-and-northern-ireland-latest.osm.pbf
-	wget https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf
+	wget -N https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf
 
 ireland-sorted.osm.pbf: ireland-and-northern-ireland-latest.osm.pbf
 	osmium sort --overwrite ireland-and-northern-ireland-latest.osm.pbf -o ireland-sorted.osm.pbf
@@ -47,9 +49,9 @@ run-graphhopper: border-region.osm-gh/properties
 	java -Dgraphhopper.datareader.file=border-region.osm.pbf -jar *.jar server config-example.yml
 
 border-points-matrix.csv: border-posts.csv border-region.osm-gh/properties
-	cat border-posts.csv | sed 1d | while read P1 ; do cat border-posts.csv | sed 1d | while read P2 ; do DIST=$$(curl -s "http://localhost:8989/route?point=$${P1/,/%2C}&point=$${P2/,/%2C}&type=json" | jq .paths[0].distance) ; echo "$${P1/,/_},$${P2/,/_},$${DIST}" ; done ; done | pv -l -s $$(( $$(cat border-posts.csv | wc -l) ** 2 )) > border-points.matrix.csv
+	( cat border-posts.csv ; echo $(MUFF) ; echo $(WARRENPORT) ) | sed 1d | while read P1 ; do ( cat border-posts.csv ; echo $(MUFF) ; echo $(WARRENPORT) ) | sed 1d | while read P2 ; do DIST=$$(curl -s "http://localhost:8989/route?instructions=false&calc_points=false&point=$${P1/,/%2C}&point=$${P2/,/%2C}&type=json" | jq .paths[0].time) ; echo "$${P1/,/_},$${P2/,/_},$${DIST}" ; done ; done | pv -l -s $$(( $$(cat border-posts.csv | wc -l) ** 2 )) > border-points.matrix.csv
 
+shortest.csv: border-points-matrix.csv
+	cd tsp-sa
+	cargo run --release -- border-points-matrix.csv $(MUFF) $(WARRENPORT)
 
-#WARRENPORT=54.11110,-6.27838
-#MUFF=55.06747,-7.26925
-#BALLYCONNELL=54.116125,-7.583871
